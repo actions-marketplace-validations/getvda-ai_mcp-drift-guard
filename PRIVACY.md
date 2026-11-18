@@ -9,7 +9,7 @@ MCP Drift Guard is maintained by Rawson Consulting B.V. (getvda.ai), Eosstraat 1
    `drift.getvda.ai` and `storage.googleapis.com`), unless you turn it off. The request carries the tool's name and
    version and a 12-character anonymous client id: a SHA-256 hash of the repository name in GitHub Actions, or a random
    id stored on your machine otherwise. It carries no server URLs, config, tool definitions or secrets. The hub keeps
-   one row per distinct reader per day to count readers.
+   one row per distinct client id (its last-seen time, updated at most daily) to count how many installs read the feed.
 3. **The observatory fallback** (`drift.getvda.ai/mcp`), on by default, only for remote servers the run could not read
    itself. For each such server it sends the server's origin and path (no query string, headers, credentials or tool
    definitions), plus the same anonymous client id. Private-looking hosts, plain `http` and incomplete URLs are never sent.
