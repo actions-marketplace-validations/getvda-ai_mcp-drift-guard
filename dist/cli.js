@@ -6687,9 +6687,19 @@ async function probeSse(server, timeoutMs) {
     void pump;
   }
 }
+function spawnArgs(command, args, platform = process.platform) {
+  if (platform !== "win32" || /\.(exe|com)$/i.test(command)) return [command, args, {}];
+  const q = (s) => {
+    s = String(s);
+    return /^[\w@%+=:,./\\-]+$/.test(s) ? s : `"${s.replace(/"/g, '""')}"`;
+  };
+  const line = `"${[command, ...args].map(q).join(" ")}"`;
+  return [process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", line], { windowsVerbatimArguments: true }];
+}
 async function probeStdio(server, timeoutMs, cwd) {
   const { command, args = [], env = {} } = server.config;
-  const child2 = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
+  const [cmd, argv, extra] = spawnArgs(command, args);
+  const child2 = spawn(cmd, argv, { ...extra, cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", stderr = "";
   const waiting = /* @__PURE__ */ new Map();
   const exited = new Promise((_, rej) => {

@@ -121,9 +121,23 @@ async function probeSse(server, timeoutMs) {
   } finally { clearTimeout(timer); ctl.abort(); void pump; }
 }
 
+// Windows: `npx`, `uvx` etc. are .cmd shims, which only cmd.exe can start, so they go
+// through `cmd /d /s /c`. A bare `shell: true` concatenates the tokens unquoted, which
+// breaks on any path with a space (C:\Program Files\nodejs\node.exe). So a token is
+// quoted when it needs it, and ONLY then: a shim started by a quoted bare name ("npx")
+// resolves its own %~dp0 to the current directory and cannot find npm.
+// An .exe or .com path is started directly, with no shell at all.
+export function spawnArgs(command, args, platform = process.platform) {
+  if (platform !== "win32" || /\.(exe|com)$/i.test(command)) return [command, args, {}];
+  const q = (s) => { s = String(s); return /^[\w@%+=:,./\\-]+$/.test(s) ? s : `"${s.replace(/"/g, '""')}"`; };
+  const line = `"${[command, ...args].map(q).join(" ")}"`;
+  return [process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", line], { windowsVerbatimArguments: true }];
+}
+
 async function probeStdio(server, timeoutMs, cwd) {
   const { command, args = [], env = {} } = server.config;
-  const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
+  const [cmd, argv, extra] = spawnArgs(command, args);
+  const child = spawn(cmd, argv, { ...extra, cwd, env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", stderr = "";
   const waiting = new Map();
   const exited = new Promise((_, rej) => {

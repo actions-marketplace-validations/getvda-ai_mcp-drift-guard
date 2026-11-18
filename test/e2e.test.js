@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { run } from "../src/run.js";
 import { expand, safeTarget } from "../src/config.js";
 import { signalsFor } from "../src/lock.js";
 
-const mock = new URL("./mock-server.js", import.meta.url).pathname;
+const mock = fileURLToPath(new URL("./mock-server.js", import.meta.url));
 function repo() {
   const d = mkdtempSync(join(tmpdir(), "dg-"));
   writeFileSync(join(d, ".mcp.json"), JSON.stringify({ mcpServers: {
