@@ -1,0 +1,25 @@
+{
+  "name": "mcp-drift-guard",
+  "displayName": "MCP Drift Guard",
+  "version": "0.1.0",
+  "description": "Warns at session start when an MCP server in this project changed its declared tools since you locked them, and flags tool-poisoning signals. Adds the MCP Drift Observatory's tools.",
+  "author": {
+    "name": "getvda.ai (Rawson Consulting B.V.)",
+    "url": "https://getvda.ai"
+  },
+  "homepage": "https://github.com/getvda-ai/mcp-drift-guard",
+  "repository": "https://github.com/getvda-ai/mcp-drift-guard",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "security",
+    "tool-poisoning",
+    "rug-pull",
+    "lockfile",
+    "rssa"
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "privacyPolicyUrl": "https://github.com/getvda-ai/mcp-drift-guard/blob/main/PRIVACY.md",
+  "documentationUrl": "https://github.com/getvda-ai/mcp-drift-guard#readme",
+  "supportUrl": "https://github.com/getvda-ai/mcp-drift-guard/issues"
+}

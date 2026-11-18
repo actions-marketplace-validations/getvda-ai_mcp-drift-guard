@@ -1,0 +1,43 @@
+name: MCP Drift Guard
+description: Fail CI when an MCP server you depend on changes its declared tools (names, descriptions, schemas). Lockfile-based rug-pull and tool-poisoning check.
+author: getvda.ai
+branding:
+  icon: shield
+  color: orange
+inputs:
+  mode:
+    description: "check (default): compare with the lockfile. update: accept current tools into the lockfile. lock: create it."
+    default: check
+  lockfile:
+    description: Path of the lockfile, relative to the workspace.
+    default: mcp-tools.lock.json
+  config:
+    description: MCP config files to read, comma or newline separated. Default .mcp.json, .cursor/mcp.json, .vscode/mcp.json.
+    default: ""
+  fail-on:
+    description: "any (default): fail on any drift. signals: fail only when a change carries a tool-poisoning signal. never: report only."
+    default: any
+  stdio:
+    description: Start stdio servers (runs the commands in your MCP config). Set false to check remote servers only.
+    default: "true"
+  timeout-ms:
+    description: Per-server timeout.
+    default: "30000"
+  public-feed:
+    description: Cross-check against the signed MCP Drift Observatory feed (read over RSS-A). Only the public feed is fetched; your server list is never sent.
+    default: "true"
+  reader-card:
+    description: Optional. Your A2A Agent Card URL, sent when reading the public feed so the publisher can count you as a subscriber.
+    default: ""
+outputs:
+  drift:
+    description: "\"true\" when any server drifted, is missing from the lockfile, or was removed from the config."
+  signals:
+    description: Tool-poisoning signals found in changed or added tools, one per line.
+  report:
+    description: The Markdown report (also written to the job summary).
+  json:
+    description: The full result as JSON.
+runs:
+  using: node24
+  main: dist/action.js

@@ -1,0 +1,19 @@
+{
+  "name": "mcp-drift-guard",
+  "version": "0.1.0",
+  "description": "A lockfile for the tools your MCP servers declare. Fails CI when a server's tool names, descriptions or schemas change. Cross-checks the signed MCP Drift Observatory feed over RSS-A.",
+  "type": "module",
+  "bin": { "mcp-drift-guard": "dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "esbuild src/cli.js --bundle --platform=node --format=esm --target=node20 --outfile=dist/cli.js --banner:js='#!/usr/bin/env node' && esbuild src/action.js --bundle --platform=node --format=esm --target=node20 --outfile=dist/action.js && cp dist/cli.js plugin/dist/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/getvda-ai/mcp-drift-guard.git" },
+  "homepage": "https://github.com/getvda-ai/mcp-drift-guard",
+  "keywords": ["mcp", "model-context-protocol", "security", "tool-poisoning", "rug-pull", "lockfile", "ai-agents", "github-action", "rssa", "claude-code"],
+  "dependencies": { "@rss-a/sdk": "0.3.0" },
+  "devDependencies": { "esbuild": "^0.28.2" }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "getvda",
+  "owner": {
+    "name": "getvda.ai",
+    "url": "https://getvda.ai"
+  },
+  "plugins": [
+    {
+      "name": "mcp-drift-guard",
+      "source": "./plugin",
+      "description": "Lockfile for MCP tool definitions: warns when a server's tools change and flags tool-poisoning signals."
+    }
+  ],
+  "description": "getvda.ai plugins for safer agents: MCP Drift Guard."
+}

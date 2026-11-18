@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "mcp-drift-observatory": { "type": "http", "url": "https://drift.getvda.ai/mcp" }
+  }
+}

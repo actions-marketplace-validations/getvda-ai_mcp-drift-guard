@@ -1,0 +1,33 @@
+# Copy to .github/workflows/mcp-drift-guard.yml
+# First, create the lockfile locally and commit it:  npx mcp-drift-guard lock
+name: MCP drift guard
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *"   # daily: catch servers that change without any change on your side
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: guard
+        uses: getvda-ai/mcp-drift-guard@v0
+        with:
+          fail-on: any
+        env:
+          # Expose whatever your .mcp.json references as ${VAR}, e.g. API keys for remote servers.
+          EXAMPLE_API_KEY: ${{ secrets.EXAMPLE_API_KEY }}
+      # On the daily run, open an issue instead of only failing silently.
+      - if: failure() && github.event_name == 'schedule' && steps.guard.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ steps.guard.outputs.report }}
+        run: gh issue create --title "MCP tool drift detected" --body "$REPORT"
