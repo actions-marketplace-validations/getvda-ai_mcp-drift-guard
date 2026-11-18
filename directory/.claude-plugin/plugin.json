@@ -1,0 +1,18 @@
+{
+  "name": "mcp-drift-observatory",
+  "displayName": "MCP Drift Observatory",
+  "version": "0.1.0",
+  "description": "Check whether a public MCP server has changed its declared tools: when, how often, and exactly which names, descriptions or schemas moved. Read-only.",
+  "author": {
+    "name": "getvda.ai (Rawson Consulting B.V.)",
+    "url": "https://getvda.ai"
+  },
+  "homepage": "https://github.com/getvda-ai/mcp-drift-guard",
+  "repository": "https://github.com/getvda-ai/mcp-drift-guard",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "security", "tool-poisoning", "rug-pull", "drift"],
+  "icon": "./.claude-plugin/icon.png",
+  "privacyPolicyUrl": "https://github.com/getvda-ai/mcp-drift-guard/blob/main/PRIVACY.md",
+  "documentationUrl": "https://github.com/getvda-ai/mcp-drift-guard/tree/main/directory#readme",
+  "supportUrl": "https://github.com/getvda-ai/mcp-drift-guard/issues"
+}

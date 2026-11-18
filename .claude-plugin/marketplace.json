@@ -9,7 +9,12 @@
       "name": "mcp-drift-guard",
       "source": "./plugin",
       "description": "Lockfile for MCP tool definitions: warns when a server's tools change and flags tool-poisoning signals."
+    },
+    {
+      "name": "mcp-drift-observatory",
+      "source": "./directory",
+      "description": "Read-only: ask Claude whether a public MCP server changed its declared tools, and see what changed."
     }
   ],
-  "description": "getvda.ai plugins for safer agents: MCP Drift Guard."
+  "description": "getvda.ai plugins for safer agents: MCP Drift Guard and the MCP Drift Observatory."
 }
