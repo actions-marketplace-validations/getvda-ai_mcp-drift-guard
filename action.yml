@@ -1,5 +1,5 @@
 name: MCP Drift Guard
-description: Fail CI when an MCP server you depend on changes its tools: a lockfile check for MCP rug-pulls and tool poisoning.
+description: "Fail CI when an MCP server you depend on changes its tools: a lockfile check for MCP rug-pulls and tool poisoning."
 author: getvda.ai
 branding:
   icon: shield
