@@ -1,7 +1,7 @@
 // Ask an MCP server for its declared tools: Streamable HTTP, legacy SSE, or stdio.
 import { spawn } from "node:child_process";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 const CLIENT = { name: "mcp-drift-guard", version: VERSION };
 const PROTOCOL = "2025-06-18";
 

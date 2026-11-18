@@ -19,7 +19,7 @@ async function main() {
     mode, lockfile, configs: configs.length ? configs : undefined,
     cwd: process.env.GITHUB_WORKSPACE || process.cwd(),
     stdio: bool("stdio", true), timeoutMs: Number(input("timeout-ms", "30000")),
-    publicFeed: bool("public-feed", true), readerCard: input("reader-card") || undefined,
+    publicFeed: bool("public-feed", true), observatory: bool("observatory", true), readerCard: input("reader-card") || undefined,
   });
   const md = report(r);
   console.log(md);

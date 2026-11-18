@@ -59,3 +59,13 @@ test("signals fire on new text only", () => {
   assert.deepEqual(signalsFor("<IMPORTANT>x</IMPORTANT>", "<IMPORTANT>x</IMPORTANT>"), []);
   assert.ok(signalsFor("hi​there").includes("invisible_unicode"));
 });
+
+import { publicUrl } from "../src/observatory.js";
+test("only public, complete URLs go to the observatory, without query", () => {
+  assert.equal(publicUrl({ config: { url: "https://mcp.x.ai/mcp?key=s3cret" }, rawUrl: "https://mcp.x.ai/mcp?key=${K}", missingEnv: ["K"] }), "https://mcp.x.ai/mcp");
+  assert.equal(publicUrl({ config: { url: "https://.example.com/mcp" }, rawUrl: "https://${TENANT}.example.com/mcp", missingEnv: ["TENANT"] }), null);
+  assert.equal(publicUrl({ config: { url: "https://h.example/" }, rawUrl: "https://h.example/${P}", missingEnv: ["P"] }), null);
+  assert.equal(publicUrl({ config: { url: "http://localhost:3000/mcp" } }), null);
+  assert.equal(publicUrl({ config: { url: "https://10.0.0.5/mcp" } }), null);
+  assert.equal(publicUrl({ config: { url: "https://intranet.corp/mcp" } }), null);
+});

@@ -6552,7 +6552,7 @@ function hashTools(tools) {
 
 // src/probe.js
 import { spawn } from "node:child_process";
-var VERSION = "0.1.0";
+var VERSION = "0.2.0";
 var CLIENT = { name: "mcp-drift-guard", version: VERSION };
 var PROTOCOL = "2025-06-18";
 var RpcError = class extends Error {
@@ -6601,13 +6601,13 @@ async function httpRpc(url, headers, body, state, timeoutMs) {
   if (msg.error) throw new RpcError(`${body.method}: ${msg.error.message ?? JSON.stringify(msg.error)}`);
   return msg.result;
 }
-async function listAll(call) {
-  const init = await call("initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT });
-  await call("notifications/initialized", void 0, true);
+async function listAll(call2) {
+  const init = await call2("initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT });
+  await call2("notifications/initialized", void 0, true);
   const tools = [];
   let cursor;
   for (let page = 0; page < 50; page++) {
-    const r = await call("tools/list", cursor ? { cursor } : {});
+    const r = await call2("tools/list", cursor ? { cursor } : {});
     tools.push(...r?.tools ?? []);
     cursor = r?.nextCursor;
     if (!cursor) break;
@@ -6618,14 +6618,14 @@ async function probeHttp(server, timeoutMs) {
   const { url, headers = {} } = server.config;
   const state = {};
   let id = 0;
-  const call = async (method, params, notify = false) => {
+  const call2 = async (method, params, notify = false) => {
     const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
     const r = await httpRpc(url, headers, body, state, timeoutMs);
     if (method === "initialize" && r?.protocolVersion) state.protocol = r.protocolVersion;
     return r;
   };
   try {
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     if (state.session) fetch(url, { method: "DELETE", headers: { ...headers, "mcp-session-id": state.session } }).catch(() => {
     });
@@ -6671,7 +6671,7 @@ async function probeSse(server, timeoutMs) {
   try {
     if (!endpoint) await wait("endpoint");
     let id = 0;
-    const call = async (method, params, notify = false) => {
+    const call2 = async (method, params, notify = false) => {
       const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
       const p = notify ? null : wait(body.id);
       await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -6680,7 +6680,7 @@ async function probeSse(server, timeoutMs) {
       if (m.error) throw new RpcError(`${method}: ${m.error.message}`);
       return m.result;
     };
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     clearTimeout(timer);
     ctl.abort();
@@ -6716,7 +6716,7 @@ async function probeStdio(server, timeoutMs, cwd) {
     }
   });
   let id = 0;
-  const call = async (method, params, notify = false) => {
+  const call2 = async (method, params, notify = false) => {
     const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
     child2.stdin.write(JSON.stringify(body) + "\n");
     if (notify) return null;
@@ -6726,7 +6726,7 @@ async function probeStdio(server, timeoutMs, cwd) {
   };
   const timer = setTimeout(() => child2.kill("SIGKILL"), timeoutMs);
   try {
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     clearTimeout(timer);
     child2.stdin.end();
@@ -6753,141 +6753,6 @@ function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => {
     t = setTimeout(() => rej(new RpcError("timed out")), ms);
   })]).finally(() => clearTimeout(t));
-}
-
-// src/config.js
-import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
-var KNOWN_CONFIGS = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json"];
-function expand(s, env = process.env) {
-  const missing = [];
-  const value = String(s).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_, name, def) => {
-    if (env[name] !== void 0 && env[name] !== "") return env[name];
-    if (def !== void 0) return def;
-    missing.push(name);
-    return "";
-  });
-  return { value, missing };
-}
-function expandAll(obj, env, missing) {
-  if (typeof obj === "string") {
-    const r = expand(obj, env);
-    missing.push(...r.missing);
-    return r.value;
-  }
-  if (Array.isArray(obj)) return obj.map((x) => expandAll(x, env, missing));
-  if (obj && typeof obj === "object") return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandAll(v, env, missing)]));
-  return obj;
-}
-function safeTarget(url) {
-  try {
-    const u = new URL(url);
-    for (const k of [...u.searchParams.keys()]) u.searchParams.set(k, "REDACTED");
-    u.username = "";
-    u.password = "";
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-function loadServers({ cwd = process.cwd(), configs, env = process.env } = {}) {
-  const files = configs?.length ? configs : KNOWN_CONFIGS.filter((f) => existsSync(join(cwd, f)));
-  const servers = [];
-  const problems = [];
-  for (const f of files) {
-    const path = join(cwd, f);
-    let json;
-    try {
-      json = JSON.parse(readFileSync(path, "utf8"));
-    } catch (e) {
-      problems.push(`${f}: ${e.message}`);
-      continue;
-    }
-    const map = json.mcpServers ?? json.servers ?? {};
-    for (const [name, raw] of Object.entries(map)) {
-      if (servers.some((s) => s.name === name)) continue;
-      const missing = [];
-      const c = expandAll(raw, env, missing);
-      const transport = c.type === "sse" ? "sse" : c.url ? "http" : c.command ? "stdio" : c.type ?? "unknown";
-      const target = transport === "stdio" ? [c.command, ...c.args ?? []].join(" ") : safeTarget(c.url ?? "");
-      const rawTarget = transport === "stdio" ? [raw.command, ...raw.args ?? []].join(" ") : safeTarget(raw.url ?? "");
-      servers.push({ name, transport, config: c, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
-    }
-  }
-  return { files, servers, problems };
-}
-
-// src/lock.js
-import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
-var LOCK_VERSION = 1;
-function readLock(path) {
-  if (!existsSync2(path)) return null;
-  const j = JSON.parse(readFileSync2(path, "utf8"));
-  if (j.lockfileVersion !== LOCK_VERSION) throw new Error(`${path}: lockfileVersion ${j.lockfileVersion} is not supported (expected ${LOCK_VERSION})`);
-  return j;
-}
-function lockEntry(server, tools) {
-  const h = hashTools(tools);
-  return {
-    transport: server.transport,
-    target: server.target,
-    tool_count: h.tool_count,
-    full_hash: h.full_hash,
-    tools: Object.fromEntries(sortTools(tools).map((t) => [t.name, { hash: h.per_tool[t.name], definition: t }]))
-  };
-}
-function writeLock(path, servers) {
-  const sorted = Object.fromEntries(Object.keys(servers).sort().map((k) => [k, servers[k]]));
-  const doc = {
-    lockfileVersion: LOCK_VERSION,
-    generator: `mcp-drift-guard@${VERSION}`,
-    canon: `${CANON}: JSON, sorted keys, compact, UTF-8 literal, tools sorted by name (same bytes as the MCP Drift Observatory's drift_hash)`,
-    servers: sorted
-  };
-  writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
-  return doc;
-}
-var SIGNALS = [
-  ["hidden_instructions", /ignore (all |any )?(previous|prior|above|earlier) (instructions|prompts?)/i],
-  ["instruction_tags", /<\s*\/?\s*(important|system|instructions?|secret|admin)\b[^>]*>/i],
-  ["conceal_from_user", /\b(do not|don't|never) (tell|inform|mention|show|reveal)[^.]{0,40}\b(user|human)/i],
-  ["sensitive_paths", /(~\/\.ssh|id_rsa|\.aws\/credentials|\.env\b|private[ _-]key|mcp\.json|\.cursor\/)/i],
-  ["exfil_wording", /\b(send|upload|post|forward|exfiltrate)\b[^.]{0,60}\b(credentials?|secrets?|tokens?|passwords?|api[ _-]?keys?|conversation|chat history)/i],
-  ["invisible_unicode", /[​-‏‪-‮⁠-⁤﻿]|[\u{E0000}-\u{E007F}]/u],
-  ["cross_tool_override", /\b(instead of|rather than|before using|whenever you use)\b[^.]{0,40}\btool\b/i]
-];
-function signalsFor(text2 = "", before = "") {
-  const out = [];
-  for (const [name, re] of SIGNALS) if (re.test(text2) && !re.test(before)) out.push(name);
-  if (before && text2.length > 2 * before.length + 80) out.push("description_length_more_than_doubled");
-  return out;
-}
-function allText(def) {
-  const parts = [];
-  const walk = (v, k) => {
-    if (typeof v === "string" && (k === "description" || k === "title")) parts.push(v);
-    else if (Array.isArray(v)) v.forEach((x) => walk(x));
-    else if (v && typeof v === "object") for (const [kk, vv] of Object.entries(v)) walk(vv, kk);
-  };
-  walk(def);
-  return parts.join("\n");
-}
-function diffServer(locked, tools) {
-  const fresh = lockEntry({ transport: locked.transport, target: locked.target }, tools);
-  if (fresh.full_hash === locked.full_hash) return { changed: false, fresh };
-  const added = [], removed = [], changed = [];
-  for (const [name, t] of Object.entries(fresh.tools)) {
-    const old = locked.tools[name];
-    if (!old) {
-      added.push({ name, signals: signalsFor(allText(t.definition)) });
-      continue;
-    }
-    if (old.hash === t.hash) continue;
-    const fields = [.../* @__PURE__ */ new Set([...Object.keys(old.definition), ...Object.keys(t.definition)])].filter((k) => canonical(old.definition[k]) !== canonical(t.definition[k])).sort();
-    changed.push({ name, fields, signals: signalsFor(allText(t.definition), allText(old.definition)) });
-  }
-  for (const name of Object.keys(locked.tools)) if (!fresh.tools[name]) removed.push({ name });
-  return { changed: true, fresh, added, removed, changedTools: changed, signals: [...added, ...changed].flatMap((x) => x.signals.map((s) => `${x.name}: ${s}`)) };
 }
 
 // node_modules/@rss-a/sdk/dist/canonical.js
@@ -7591,21 +7456,21 @@ var MCP_TOOLS = [
 
 // src/rssa.js
 import { createHash as createHash2, randomUUID } from "node:crypto";
-import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join as join2 } from "node:path";
+import { dirname, join } from "node:path";
 var GROUP_FEED = "https://hub.rssa.getvda.ai/g/6a3a4c228e34/feed.atom";
 var DRIFT_FEED = "https://storage.googleapis.com/c2md-493808-gosce-rssa/feeds/drift/feed.rss";
 var FOLLOW = "https://hub.rssa.getvda.ai/network/@getvda-mcp-drift-observa-e131.atom?via=drift-guard";
 function clientId(env = process.env) {
   if (env.GITHUB_REPOSITORY) return createHash2("sha256").update(`github:${env.GITHUB_REPOSITORY}`).digest("hex").slice(0, 12);
-  const dir = env.CLAUDE_PLUGIN_DATA || join2(homedir(), ".config", "mcp-drift-guard");
-  const f = join2(dir, "client-id");
+  const dir = env.CLAUDE_PLUGIN_DATA || join(homedir(), ".config", "mcp-drift-guard");
+  const f = join(dir, "client-id");
   try {
-    if (existsSync3(f)) return readFileSync3(f, "utf8").trim();
+    if (existsSync(f)) return readFileSync(f, "utf8").trim();
     mkdirSync(dirname(f), { recursive: true });
     const id = createHash2("sha256").update(randomUUID()).digest("hex").slice(0, 12);
-    writeFileSync2(f, id);
+    writeFileSync(f, id);
     return id;
   } catch {
     return "anon";
@@ -7646,7 +7511,208 @@ ${d.content ?? ""}`.match(/https?:\/\/[^\s,<>"]+/g) ?? [];
   }
 }
 
+// src/observatory.js
+var OBSERVATORY = "https://drift.getvda.ai/mcp";
+var PRIVATE = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|\[?::1\]?|0\.0\.0\.0)|\.(local|internal|lan|home|corp)$/i;
+function publicUrl(server) {
+  const raw = server.config?.url;
+  if (!raw) return null;
+  const rawPath = (() => {
+    try {
+      const u = new URL(String(server.rawUrl ?? raw).replace(/\$\{[^}]+\}/g, "zzdgvarzz"));
+      return u.host + u.pathname;
+    } catch {
+      return "zzdgvarzz";
+    }
+  })();
+  if (rawPath.includes("zzdgvarzz") && server.missingEnv?.length) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || PRIVATE.test(u.hostname)) return null;
+    return u.origin + u.pathname;
+  } catch {
+    return null;
+  }
+}
+async function call(tool, args, timeoutMs, env) {
+  const res = await fetch(OBSERVATORY, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "user-agent": `mcp-drift-guard/${VERSION} client=${clientId(env)}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!res.ok) throw new Error(`observatory HTTP ${res.status}`);
+  let text2 = await res.text();
+  if ((res.headers.get("content-type") ?? "").includes("text/event-stream")) text2 = text2.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5)).join("");
+  const msg = JSON.parse(text2);
+  if (msg.error) throw new Error(msg.error.message);
+  return JSON.parse(msg.result?.content?.[0]?.text ?? "{}");
+}
+async function observe(url, { timeoutMs = 15e3, withDiff = true, env = process.env } = {}) {
+  try {
+    const c = await call("drift_check", { url }, timeoutMs, env);
+    if (!c.known || !c.full_hash) return { known: false, status: c.status, note: c.note };
+    const out = {
+      known: true,
+      status: c.status,
+      full_hash: c.full_hash,
+      tool_count: c.tool_count,
+      last_changed_at: c.last_changed_at,
+      last_success_at: c.last_success_at,
+      change_count: c.change_count,
+      witness: c.witness,
+      server_page: c.follow?.server_page
+    };
+    if (withDiff && c.change_count) {
+      try {
+        const d = await call("drift_diff", { url }, timeoutMs, env);
+        out.latest_change = d.latest_change && { at: d.latest_change.observed_at, summary: d.latest_change.summary, signals: d.latest_change.signals ?? [], to_hash: d.latest_change.to_hash };
+      } catch {
+      }
+    }
+    return out;
+  } catch (e) {
+    return { error: e?.name === "TimeoutError" ? "observatory timed out" : e.message };
+  }
+}
+
+// src/config.js
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { join as join2, relative } from "node:path";
+var KNOWN_CONFIGS = [".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json"];
+function expand(s, env = process.env) {
+  const missing = [];
+  const value = String(s).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g, (_, name, def) => {
+    if (env[name] !== void 0 && env[name] !== "") return env[name];
+    if (def !== void 0) return def;
+    missing.push(name);
+    return "";
+  });
+  return { value, missing };
+}
+function expandAll(obj, env, missing) {
+  if (typeof obj === "string") {
+    const r = expand(obj, env);
+    missing.push(...r.missing);
+    return r.value;
+  }
+  if (Array.isArray(obj)) return obj.map((x) => expandAll(x, env, missing));
+  if (obj && typeof obj === "object") return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, expandAll(v, env, missing)]));
+  return obj;
+}
+function safeTarget(url) {
+  try {
+    const u = new URL(url);
+    for (const k of [...u.searchParams.keys()]) u.searchParams.set(k, "REDACTED");
+    u.username = "";
+    u.password = "";
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+function loadServers({ cwd = process.cwd(), configs, env = process.env } = {}) {
+  const files = configs?.length ? configs : KNOWN_CONFIGS.filter((f) => existsSync2(join2(cwd, f)));
+  const servers = [];
+  const problems = [];
+  for (const f of files) {
+    const path = join2(cwd, f);
+    let json;
+    try {
+      json = JSON.parse(readFileSync2(path, "utf8"));
+    } catch (e) {
+      problems.push(`${f}: ${e.message}`);
+      continue;
+    }
+    const map = json.mcpServers ?? json.servers ?? {};
+    for (const [name, raw] of Object.entries(map)) {
+      if (servers.some((s) => s.name === name)) continue;
+      const missing = [];
+      const c = expandAll(raw, env, missing);
+      const transport = c.type === "sse" ? "sse" : c.url ? "http" : c.command ? "stdio" : c.type ?? "unknown";
+      const target = transport === "stdio" ? [c.command, ...c.args ?? []].join(" ") : safeTarget(c.url ?? "");
+      const rawTarget = transport === "stdio" ? [raw.command, ...raw.args ?? []].join(" ") : safeTarget(raw.url ?? "");
+      servers.push({ name, transport, config: c, rawUrl: raw.url, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
+    }
+  }
+  return { files, servers, problems };
+}
+
+// src/lock.js
+import { existsSync as existsSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+var LOCK_VERSION = 1;
+function readLock(path) {
+  if (!existsSync3(path)) return null;
+  const j = JSON.parse(readFileSync3(path, "utf8"));
+  if (j.lockfileVersion !== LOCK_VERSION) throw new Error(`${path}: lockfileVersion ${j.lockfileVersion} is not supported (expected ${LOCK_VERSION})`);
+  return j;
+}
+function lockEntry(server, tools) {
+  const h = hashTools(tools);
+  return {
+    transport: server.transport,
+    target: server.target,
+    tool_count: h.tool_count,
+    full_hash: h.full_hash,
+    tools: Object.fromEntries(sortTools(tools).map((t) => [t.name, { hash: h.per_tool[t.name], definition: t }]))
+  };
+}
+function writeLock(path, servers) {
+  const sorted = Object.fromEntries(Object.keys(servers).sort().map((k) => [k, servers[k]]));
+  const doc = {
+    lockfileVersion: LOCK_VERSION,
+    generator: `mcp-drift-guard@${VERSION}`,
+    canon: `${CANON}: JSON, sorted keys, compact, UTF-8 literal, tools sorted by name (same bytes as the MCP Drift Observatory's drift_hash)`,
+    servers: sorted
+  };
+  writeFileSync2(path, JSON.stringify(doc, null, 2) + "\n");
+  return doc;
+}
+var SIGNALS = [
+  ["hidden_instructions", /ignore (all |any )?(previous|prior|above|earlier) (instructions|prompts?)/i],
+  ["instruction_tags", /<\s*\/?\s*(important|system|instructions?|secret|admin)\b[^>]*>/i],
+  ["conceal_from_user", /\b(do not|don't|never) (tell|inform|mention|show|reveal)[^.]{0,40}\b(user|human)/i],
+  ["sensitive_paths", /(~\/\.ssh|id_rsa|\.aws\/credentials|\.env\b|private[ _-]key|mcp\.json|\.cursor\/)/i],
+  ["exfil_wording", /\b(send|upload|post|forward|exfiltrate)\b[^.]{0,60}\b(credentials?|secrets?|tokens?|passwords?|api[ _-]?keys?|conversation|chat history)/i],
+  ["invisible_unicode", /[​-‏‪-‮⁠-⁤﻿]|[\u{E0000}-\u{E007F}]/u],
+  ["cross_tool_override", /\b(instead of|rather than|before using|whenever you use)\b[^.]{0,40}\btool\b/i]
+];
+function signalsFor(text2 = "", before = "") {
+  const out = [];
+  for (const [name, re] of SIGNALS) if (re.test(text2) && !re.test(before)) out.push(name);
+  if (before && text2.length > 2 * before.length + 80) out.push("description_length_more_than_doubled");
+  return out;
+}
+function allText(def) {
+  const parts = [];
+  const walk = (v, k) => {
+    if (typeof v === "string" && (k === "description" || k === "title")) parts.push(v);
+    else if (Array.isArray(v)) v.forEach((x) => walk(x));
+    else if (v && typeof v === "object") for (const [kk, vv] of Object.entries(v)) walk(vv, kk);
+  };
+  walk(def);
+  return parts.join("\n");
+}
+function diffServer(locked, tools) {
+  const fresh = lockEntry({ transport: locked.transport, target: locked.target }, tools);
+  if (fresh.full_hash === locked.full_hash) return { changed: false, fresh };
+  const added = [], removed = [], changed = [];
+  for (const [name, t] of Object.entries(fresh.tools)) {
+    const old = locked.tools[name];
+    if (!old) {
+      added.push({ name, signals: signalsFor(allText(t.definition)) });
+      continue;
+    }
+    if (old.hash === t.hash) continue;
+    const fields = [.../* @__PURE__ */ new Set([...Object.keys(old.definition), ...Object.keys(t.definition)])].filter((k) => canonical(old.definition[k]) !== canonical(t.definition[k])).sort();
+    changed.push({ name, fields, signals: signalsFor(allText(t.definition), allText(old.definition)) });
+  }
+  for (const name of Object.keys(locked.tools)) if (!fresh.tools[name]) removed.push({ name });
+  return { changed: true, fresh, added, removed, changedTools: changed, signals: [...added, ...changed].flatMap((x) => x.signals.map((s) => `${x.name}: ${s}`)) };
+}
+
 // src/run.js
+var STALE_MS = 7 * 864e5;
 async function run(opts) {
   const {
     mode = "check",
@@ -7656,6 +7722,7 @@ async function run(opts) {
     stdio = true,
     timeoutMs = 3e4,
     publicFeed = true,
+    observatory: useObservatory = true,
     readerCard,
     only,
     env = process.env
@@ -7665,13 +7732,56 @@ async function run(opts) {
   const lockPath = lockfile.startsWith("/") ? lockfile : `${cwd}/${lockfile}`;
   const lock = readLock(lockPath);
   if (mode === "check" && !lock) return { mode, error: `no lockfile at ${lockfile}: run \`mcp-drift-guard lock\` first and commit it`, files, problems, results: [] };
-  const probes = await Promise.all(servers.map(async (s) => [s, await probe(s, { timeoutMs, cwd, stdio })]));
+  const probes = await Promise.all(servers.map(async (s) => {
+    const p = await probe(s, { timeoutMs, cwd, stdio });
+    let obs2;
+    if (!p.ok && useObservatory && (s.transport === "http" || s.transport === "sse")) {
+      const url = publicUrl(s);
+      obs2 = url ? await observe(url, { env }) : { private: true };
+    }
+    return [s, p, obs2];
+  }));
   const results = [];
   const nextLock = { ...lock?.servers ?? {} };
-  for (const [s, p] of probes) {
+  for (const [s, p, obs2] of probes) {
     const locked = lock?.servers?.[s.name];
+    if (!p.ok && obs2?.known) {
+      const stale = Date.now() - Date.parse(obs2.last_success_at ?? 0) > STALE_MS;
+      const base = {
+        name: s.name,
+        transport: s.transport,
+        target: s.target,
+        tool_count: obs2.tool_count,
+        via: "observatory",
+        localError: p.error,
+        observedAt: obs2.last_success_at,
+        stale,
+        serverPage: obs2.server_page
+      };
+      const entry = { transport: s.transport, target: s.target, tool_count: obs2.tool_count, full_hash: obs2.full_hash, source: "observatory", observed_at: obs2.last_success_at, tools: {} };
+      if (!locked) {
+        results.push({ ...base, status: mode === "check" ? "unlocked" : "locked" });
+        if (mode !== "check") nextLock[s.name] = entry;
+      } else if (locked.full_hash === obs2.full_hash) {
+        results.push({ ...base, status: "unchanged" });
+      } else {
+        const lc = obs2.latest_change;
+        results.push({
+          ...base,
+          status: "drifted",
+          added: [],
+          removed: [],
+          changedTools: [],
+          observatoryChange: lc,
+          signals: (lc?.signals ?? []).map((x) => `observatory: ${x}`)
+        });
+        if (mode !== "check") nextLock[s.name] = locked.tools && Object.keys(locked.tools).length && locked.source !== "observatory" ? { ...entry, previous_definitions_dropped: true } : entry;
+      }
+      continue;
+    }
     if (!p.ok) {
-      results.push({ name: s.name, transport: s.transport, target: s.target, status: p.status, error: p.error, locked: !!locked });
+      const cover = obs2 ? obs2.private ? "private or incomplete URL, not sent to the observatory" : obs2.error ? `observatory: ${obs2.error}` : "not in the observatory either" : void 0;
+      results.push({ name: s.name, transport: s.transport, target: s.target, status: p.status, error: p.error, coverage: cover, locked: !!locked });
       continue;
     }
     if (!locked) {
@@ -7680,6 +7790,13 @@ async function run(opts) {
       continue;
     }
     const d = diffServer(locked, p.tools);
+    if (d.changed && locked.source === "observatory") {
+      d.added = [];
+      d.removed = [];
+      d.changedTools = [];
+      d.signals = [];
+      d.noDefinitions = true;
+    }
     results.push({
       name: s.name,
       transport: s.transport,
@@ -7687,7 +7804,7 @@ async function run(opts) {
       status: d.changed ? "drifted" : "unchanged",
       tool_count: p.tools.length,
       serverInfo: p.serverInfo,
-      ...d.changed ? { added: d.added, removed: d.removed, changedTools: d.changedTools, signals: d.signals } : {}
+      ...d.changed ? { added: d.added, removed: d.removed, changedTools: d.changedTools, signals: d.signals, noDefinitions: d.noDefinitions } : {}
     });
     nextLock[s.name] = d.fresh;
   }
@@ -7702,7 +7819,8 @@ async function run(opts) {
   const obs = publicFeed ? await observatory(servers, { readerCard, env }) : null;
   const drift = results.some((r) => ["drifted", "unlocked", "removed_from_config"].includes(r.status));
   const signals = results.flatMap((r) => (r.signals ?? []).map((s) => `${r.name} / ${s}`));
-  return { mode, files, problems, results, drift, signals, observatory: obs, lockfile };
+  const viaObservatory = results.filter((x) => x.via === "observatory").length;
+  return { mode, files, problems, results, drift, signals, observatory: obs, viaObservatory, lockfile };
 }
 var icon = { unchanged: "\u2705", drifted: "\u26A0\uFE0F", unlocked: "\u{1F195}", locked: "\u{1F512}", removed_from_config: "\u2796", auth_required: "\u{1F510}", unreachable: "\u2754", skipped: "\u23ED\uFE0F" };
 function report(r, { title = "MCP tool drift" } = {}) {
@@ -7716,13 +7834,19 @@ function report(r, { title = "MCP tool drift" } = {}) {
   L.push(head, "");
   if (r.signals.length) L.push(`\u{1F6A9} **Signals worth a close look** (heuristics, not verdicts): ${r.signals.map((s) => `\`${s}\``).join(", ")}`, "");
   L.push("| | Server | Transport | Tools | Status |", "|---|---|---|---|---|");
-  for (const x of r.results) L.push(`| ${icon[x.status] ?? ""} | \`${x.name}\` | ${x.transport} | ${x.tool_count ?? "\u2013"} | ${x.status.replace(/_/g, " ")}${x.error ? `: ${x.error}` : ""} |`);
+  for (const x of r.results) {
+    const via = x.via === "observatory" ? ` (via observatory, seen ${String(x.observedAt ?? "").slice(0, 10)}${x.stale ? ", stale" : ""}; local: ${x.localError})` : "";
+    L.push(`| ${icon[x.status] ?? ""} | \`${x.name}\` | ${x.transport} | ${x.tool_count ?? "\u2013"} | ${x.status.replace(/_/g, " ")}${via}${x.error ? `: ${x.error}` : ""}${x.coverage ? ` (${x.coverage})` : ""} |`);
+  }
   for (const x of r.results.filter((y) => y.status === "drifted")) {
     L.push("", `### \`${x.name}\``);
     for (const t of x.added) L.push(`- **added** \`${t.name}\`${t.signals.length ? ` \u{1F6A9} ${t.signals.join(", ")}` : ""}`);
     for (const t of x.removed) L.push(`- **removed** \`${t.name}\``);
     for (const t of x.changedTools) L.push(`- **changed** \`${t.name}\`: ${t.fields.join(", ")}${t.signals.length ? ` \u{1F6A9} ${t.signals.join(", ")}` : ""}`);
+    if (x.via === "observatory") L.push(`- the observatory's hash no longer matches your pin${x.observatoryChange ? `; its latest change (${x.observatoryChange.at.slice(0, 10)}): ${x.observatoryChange.summary}` : ""}. Tool-level detail: ${x.serverPage ?? "drift_diff"}`);
+    if (x.noDefinitions) L.push(`- pinned from the observatory (hash only), so there is no stored definition to diff. Run \`update\` after review to store the full definitions.`);
   }
+  if (r.viaObservatory) L.push("", `<sub>${r.viaObservatory} server(s) this run could not read were checked against the MCP Drift Observatory's last nightly observation (hashes are byte-identical to yours). Only each server's origin and path were sent, never query strings, headers or credentials. Turn off with \`observatory: false\` / \`--no-observatory\`.</sub>`);
   const o = r.observatory;
   if (o) {
     L.push("");
@@ -7752,6 +7876,7 @@ Usage:
   mcp-drift-guard lock     probe every server in .mcp.json / .cursor/mcp.json / .vscode/mcp.json, write mcp-tools.lock.json
   mcp-drift-guard check    probe again; exit 1 if any server's declared tools differ from the lockfile
   mcp-drift-guard update   accept the current tools into the lockfile (review the git diff before committing)
+  mcp-drift-guard observe <url>...    what the Drift Observatory last saw for any public MCP server (no config needed)
   mcp-drift-guard hash <tools.json>   print the canonical hashes (same bytes as the Drift Observatory)
 
 Options:
@@ -7761,12 +7886,14 @@ Options:
   --no-stdio             do not start stdio servers
   --timeout <ms>         per server, default 30000
   --fail-on <any|signals|never>   default any
+  --no-observatory       don't fall back to the observatory for remote servers this run can't read
+                         (the fallback sends each such server's origin + path, never query, headers or credentials)
   --no-public-feed       skip the cross-check against the signed observatory feed
   --reader-card <url>    your A2A Agent Card URL, sent when reading the public feed
   --json                 machine-readable output
 `;
 function parse(argv) {
-  const o = { cmd: argv[0], configs: [], servers: [], stdio: true, publicFeed: true, failOn: "any", json: false, rest: [] };
+  const o = { cmd: argv[0], configs: [], servers: [], stdio: true, publicFeed: true, observatory: true, failOn: "any", json: false, rest: [] };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i], next = () => argv[++i];
     if (a === "--lockfile") o.lockfile = next();
@@ -7776,12 +7903,16 @@ function parse(argv) {
     else if (a === "--timeout") o.timeoutMs = Number(next());
     else if (a === "--fail-on") o.failOn = next();
     else if (a === "--no-public-feed") o.publicFeed = false;
+    else if (a === "--no-observatory") o.observatory = false;
     else if (a === "--reader-card") o.readerCard = next();
     else if (a === "--json") o.json = true;
     else if (a === "-h" || a === "--help") o.cmd = "help";
     else o.rest.push(a);
   }
-  if (process.env.DRIFT_GUARD_OFFLINE === "1") o.publicFeed = false;
+  if (process.env.DRIFT_GUARD_OFFLINE === "1") {
+    o.publicFeed = false;
+    o.observatory = false;
+  }
   return o;
 }
 function exitCode(r, failOn) {
@@ -7798,7 +7929,7 @@ async function hook(o) {
   }
   const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
   try {
-    const r = await run({ mode: "check", cwd, lockfile: o.lockfile, stdio: false, timeoutMs: o.timeoutMs ?? 5e3, publicFeed: o.publicFeed, readerCard: o.readerCard });
+    const r = await run({ mode: "check", cwd, lockfile: o.lockfile, stdio: false, timeoutMs: o.timeoutMs ?? 5e3, publicFeed: o.publicFeed, observatory: o.observatory, readerCard: o.readerCard });
     if (r.error || !r.drift) return;
     const drifted = r.results.filter((x) => ["drifted", "unlocked"].includes(x.status)).map((x) => x.name);
     const msg = `mcp-drift-guard: MCP server tools changed since mcp-tools.lock.json was committed (${drifted.join(", ")}).${r.signals.length ? ` Signals: ${r.signals.join("; ")}.` : ""}`;
@@ -7831,6 +7962,23 @@ async function main() {
     console.log(JSON.stringify(hashTools(Array.isArray(j) ? j : j.tools ?? j.result?.tools), null, 2));
     return 0;
   }
+  if (o.cmd === "observe") {
+    if (!o.rest.length) {
+      process.stderr.write("usage: mcp-drift-guard observe <url>...\n");
+      return 2;
+    }
+    const rows = await Promise.all(o.rest.map(async (u) => [u, await observe(u)]));
+    if (o.json) {
+      console.log(JSON.stringify(Object.fromEntries(rows), null, 2));
+      return 0;
+    }
+    for (const [u, x] of rows) {
+      if (x.error) console.log(`\u2754 ${u}: ${x.error}`);
+      else if (!x.known) console.log(`\u2013 ${u}: not in the observatory${x.note ? ` (${x.note})` : ""}`);
+      else console.log(`${x.change_count ? "\u26A0\uFE0F" : "\u2705"} ${u}: ${x.tool_count} tools, hash ${x.full_hash.slice(0, 12)}\u2026, ${x.change_count} change(s), last ${String(x.last_changed_at).slice(0, 10)}${x.latest_change ? ` (${x.latest_change.summary})` : ""}`);
+    }
+    return 0;
+  }
   if (!["lock", "check", "update"].includes(o.cmd)) {
     process.stderr.write(`unknown command ${o.cmd}
 
@@ -7844,6 +7992,7 @@ ${HELP}`);
     stdio: o.stdio,
     timeoutMs: o.timeoutMs,
     publicFeed: o.publicFeed,
+    observatory: o.observatory,
     readerCard: o.readerCard,
     only: o.servers.length ? (s) => o.servers.includes(s.name) : void 0
   });

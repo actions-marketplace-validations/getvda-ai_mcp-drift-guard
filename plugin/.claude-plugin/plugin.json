@@ -1,7 +1,7 @@
 {
   "name": "mcp-drift-guard",
   "displayName": "MCP Drift Guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Warns at session start when an MCP server in this project changed its declared tools since you locked them, and flags tool-poisoning signals. Adds the MCP Drift Observatory's tools.",
   "author": {
     "name": "getvda.ai (Rawson Consulting B.V.)",

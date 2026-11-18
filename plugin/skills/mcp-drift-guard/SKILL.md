@@ -23,8 +23,13 @@ node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" <command>
 | `check` | Probe again and compare. Exit 1 on drift |
 | `update` | Accept the current tools into the lockfile |
 | `check --json` | The same, machine-readable |
+| `observe <url>...` | What the public observatory last saw for any public server, no config needed |
 
-Useful flags: `--server <name>`, `--no-stdio` (don't start local servers), `--no-public-feed`.
+Useful flags: `--server <name>`, `--no-stdio` (don't start local servers), `--no-observatory`, `--no-public-feed`.
+
+Rows marked **via observatory** were not read directly: this run couldn't reach them (missing secret, auth, down), so
+the result is the observatory's last nightly observation compared by hash. Say so when you report them, with the date
+seen, and say "stale" if the report does.
 
 ## How to help
 
@@ -48,5 +53,6 @@ nightly and publishes every change as a signed RSS-A feed. Its `drift_check`, `d
 take a server URL. **Ask the user before calling them**: checking a server tells getvda.ai that the user uses it.
 Never send a URL that carries a key or token. `drift_status` and `drift_hash` send nothing about the user.
 
-The lockfile check itself sends nothing anywhere: it talks only to the user's own servers, and reads the public
-signed feed (no server list attached) to add public history to the report.
+The lockfile check talks to the user's own servers and reads the public signed feed (no server list attached). For
+public remote servers it cannot read itself, it falls back to the observatory and sends that server's origin and path
+only (never query strings, headers or credentials). The user can turn that off with `--no-observatory`.

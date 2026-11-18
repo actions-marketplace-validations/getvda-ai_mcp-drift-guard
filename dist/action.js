@@ -6566,7 +6566,7 @@ function loadServers({ cwd = process.cwd(), configs, env = process.env } = {}) {
       const transport = c.type === "sse" ? "sse" : c.url ? "http" : c.command ? "stdio" : c.type ?? "unknown";
       const target = transport === "stdio" ? [c.command, ...c.args ?? []].join(" ") : safeTarget(c.url ?? "");
       const rawTarget = transport === "stdio" ? [raw.command, ...raw.args ?? []].join(" ") : safeTarget(raw.url ?? "");
-      servers.push({ name, transport, config: c, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
+      servers.push({ name, transport, config: c, rawUrl: raw.url, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
     }
   }
   return { files, servers, problems };
@@ -6616,7 +6616,7 @@ function hashTools(tools) {
 
 // src/probe.js
 import { spawn } from "node:child_process";
-var VERSION = "0.1.0";
+var VERSION = "0.2.0";
 var CLIENT = { name: "mcp-drift-guard", version: VERSION };
 var PROTOCOL = "2025-06-18";
 var RpcError = class extends Error {
@@ -6665,13 +6665,13 @@ async function httpRpc(url, headers, body, state, timeoutMs) {
   if (msg.error) throw new RpcError(`${body.method}: ${msg.error.message ?? JSON.stringify(msg.error)}`);
   return msg.result;
 }
-async function listAll(call) {
-  const init = await call("initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT });
-  await call("notifications/initialized", void 0, true);
+async function listAll(call2) {
+  const init = await call2("initialize", { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: CLIENT });
+  await call2("notifications/initialized", void 0, true);
   const tools = [];
   let cursor;
   for (let page = 0; page < 50; page++) {
-    const r = await call("tools/list", cursor ? { cursor } : {});
+    const r = await call2("tools/list", cursor ? { cursor } : {});
     tools.push(...r?.tools ?? []);
     cursor = r?.nextCursor;
     if (!cursor) break;
@@ -6682,14 +6682,14 @@ async function probeHttp(server, timeoutMs) {
   const { url, headers = {} } = server.config;
   const state = {};
   let id = 0;
-  const call = async (method, params, notify = false) => {
+  const call2 = async (method, params, notify = false) => {
     const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
     const r = await httpRpc(url, headers, body, state, timeoutMs);
     if (method === "initialize" && r?.protocolVersion) state.protocol = r.protocolVersion;
     return r;
   };
   try {
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     if (state.session) fetch(url, { method: "DELETE", headers: { ...headers, "mcp-session-id": state.session } }).catch(() => {
     });
@@ -6735,7 +6735,7 @@ async function probeSse(server, timeoutMs) {
   try {
     if (!endpoint) await wait("endpoint");
     let id = 0;
-    const call = async (method, params, notify = false) => {
+    const call2 = async (method, params, notify = false) => {
       const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
       const p = notify ? null : wait(body.id);
       await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -6744,7 +6744,7 @@ async function probeSse(server, timeoutMs) {
       if (m.error) throw new RpcError(`${method}: ${m.error.message}`);
       return m.result;
     };
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     clearTimeout(timer);
     ctl.abort();
@@ -6780,7 +6780,7 @@ async function probeStdio(server, timeoutMs, cwd) {
     }
   });
   let id = 0;
-  const call = async (method, params, notify = false) => {
+  const call2 = async (method, params, notify = false) => {
     const body = notify ? { jsonrpc: "2.0", method } : { jsonrpc: "2.0", id: ++id, method, ...params ? { params } : {} };
     child2.stdin.write(JSON.stringify(body) + "\n");
     if (notify) return null;
@@ -6790,7 +6790,7 @@ async function probeStdio(server, timeoutMs, cwd) {
   };
   const timer = setTimeout(() => child2.kill("SIGKILL"), timeoutMs);
   try {
-    return await listAll(call);
+    return await listAll(call2);
   } finally {
     clearTimeout(timer);
     child2.stdin.end();
@@ -7647,7 +7647,73 @@ ${d.content ?? ""}`.match(/https?:\/\/[^\s,<>"]+/g) ?? [];
   }
 }
 
+// src/observatory.js
+var OBSERVATORY = "https://drift.getvda.ai/mcp";
+var PRIVATE = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|\[?::1\]?|0\.0\.0\.0)|\.(local|internal|lan|home|corp)$/i;
+function publicUrl(server) {
+  const raw = server.config?.url;
+  if (!raw) return null;
+  const rawPath = (() => {
+    try {
+      const u = new URL(String(server.rawUrl ?? raw).replace(/\$\{[^}]+\}/g, "zzdgvarzz"));
+      return u.host + u.pathname;
+    } catch {
+      return "zzdgvarzz";
+    }
+  })();
+  if (rawPath.includes("zzdgvarzz") && server.missingEnv?.length) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || PRIVATE.test(u.hostname)) return null;
+    return u.origin + u.pathname;
+  } catch {
+    return null;
+  }
+}
+async function call(tool, args, timeoutMs, env) {
+  const res = await fetch(OBSERVATORY, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "user-agent": `mcp-drift-guard/${VERSION} client=${clientId(env)}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!res.ok) throw new Error(`observatory HTTP ${res.status}`);
+  let text2 = await res.text();
+  if ((res.headers.get("content-type") ?? "").includes("text/event-stream")) text2 = text2.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5)).join("");
+  const msg = JSON.parse(text2);
+  if (msg.error) throw new Error(msg.error.message);
+  return JSON.parse(msg.result?.content?.[0]?.text ?? "{}");
+}
+async function observe(url, { timeoutMs = 15e3, withDiff = true, env = process.env } = {}) {
+  try {
+    const c = await call("drift_check", { url }, timeoutMs, env);
+    if (!c.known || !c.full_hash) return { known: false, status: c.status, note: c.note };
+    const out = {
+      known: true,
+      status: c.status,
+      full_hash: c.full_hash,
+      tool_count: c.tool_count,
+      last_changed_at: c.last_changed_at,
+      last_success_at: c.last_success_at,
+      change_count: c.change_count,
+      witness: c.witness,
+      server_page: c.follow?.server_page
+    };
+    if (withDiff && c.change_count) {
+      try {
+        const d = await call("drift_diff", { url }, timeoutMs, env);
+        out.latest_change = d.latest_change && { at: d.latest_change.observed_at, summary: d.latest_change.summary, signals: d.latest_change.signals ?? [], to_hash: d.latest_change.to_hash };
+      } catch {
+      }
+    }
+    return out;
+  } catch (e) {
+    return { error: e?.name === "TimeoutError" ? "observatory timed out" : e.message };
+  }
+}
+
 // src/run.js
+var STALE_MS = 7 * 864e5;
 async function run(opts) {
   const {
     mode = "check",
@@ -7657,6 +7723,7 @@ async function run(opts) {
     stdio = true,
     timeoutMs = 3e4,
     publicFeed = true,
+    observatory: useObservatory = true,
     readerCard,
     only,
     env = process.env
@@ -7666,13 +7733,56 @@ async function run(opts) {
   const lockPath = lockfile.startsWith("/") ? lockfile : `${cwd}/${lockfile}`;
   const lock = readLock(lockPath);
   if (mode === "check" && !lock) return { mode, error: `no lockfile at ${lockfile}: run \`mcp-drift-guard lock\` first and commit it`, files, problems, results: [] };
-  const probes = await Promise.all(servers.map(async (s) => [s, await probe(s, { timeoutMs, cwd, stdio })]));
+  const probes = await Promise.all(servers.map(async (s) => {
+    const p = await probe(s, { timeoutMs, cwd, stdio });
+    let obs2;
+    if (!p.ok && useObservatory && (s.transport === "http" || s.transport === "sse")) {
+      const url = publicUrl(s);
+      obs2 = url ? await observe(url, { env }) : { private: true };
+    }
+    return [s, p, obs2];
+  }));
   const results = [];
   const nextLock = { ...lock?.servers ?? {} };
-  for (const [s, p] of probes) {
+  for (const [s, p, obs2] of probes) {
     const locked = lock?.servers?.[s.name];
+    if (!p.ok && obs2?.known) {
+      const stale = Date.now() - Date.parse(obs2.last_success_at ?? 0) > STALE_MS;
+      const base = {
+        name: s.name,
+        transport: s.transport,
+        target: s.target,
+        tool_count: obs2.tool_count,
+        via: "observatory",
+        localError: p.error,
+        observedAt: obs2.last_success_at,
+        stale,
+        serverPage: obs2.server_page
+      };
+      const entry = { transport: s.transport, target: s.target, tool_count: obs2.tool_count, full_hash: obs2.full_hash, source: "observatory", observed_at: obs2.last_success_at, tools: {} };
+      if (!locked) {
+        results.push({ ...base, status: mode === "check" ? "unlocked" : "locked" });
+        if (mode !== "check") nextLock[s.name] = entry;
+      } else if (locked.full_hash === obs2.full_hash) {
+        results.push({ ...base, status: "unchanged" });
+      } else {
+        const lc = obs2.latest_change;
+        results.push({
+          ...base,
+          status: "drifted",
+          added: [],
+          removed: [],
+          changedTools: [],
+          observatoryChange: lc,
+          signals: (lc?.signals ?? []).map((x) => `observatory: ${x}`)
+        });
+        if (mode !== "check") nextLock[s.name] = locked.tools && Object.keys(locked.tools).length && locked.source !== "observatory" ? { ...entry, previous_definitions_dropped: true } : entry;
+      }
+      continue;
+    }
     if (!p.ok) {
-      results.push({ name: s.name, transport: s.transport, target: s.target, status: p.status, error: p.error, locked: !!locked });
+      const cover = obs2 ? obs2.private ? "private or incomplete URL, not sent to the observatory" : obs2.error ? `observatory: ${obs2.error}` : "not in the observatory either" : void 0;
+      results.push({ name: s.name, transport: s.transport, target: s.target, status: p.status, error: p.error, coverage: cover, locked: !!locked });
       continue;
     }
     if (!locked) {
@@ -7681,6 +7791,13 @@ async function run(opts) {
       continue;
     }
     const d = diffServer(locked, p.tools);
+    if (d.changed && locked.source === "observatory") {
+      d.added = [];
+      d.removed = [];
+      d.changedTools = [];
+      d.signals = [];
+      d.noDefinitions = true;
+    }
     results.push({
       name: s.name,
       transport: s.transport,
@@ -7688,7 +7805,7 @@ async function run(opts) {
       status: d.changed ? "drifted" : "unchanged",
       tool_count: p.tools.length,
       serverInfo: p.serverInfo,
-      ...d.changed ? { added: d.added, removed: d.removed, changedTools: d.changedTools, signals: d.signals } : {}
+      ...d.changed ? { added: d.added, removed: d.removed, changedTools: d.changedTools, signals: d.signals, noDefinitions: d.noDefinitions } : {}
     });
     nextLock[s.name] = d.fresh;
   }
@@ -7703,7 +7820,8 @@ async function run(opts) {
   const obs = publicFeed ? await observatory(servers, { readerCard, env }) : null;
   const drift = results.some((r) => ["drifted", "unlocked", "removed_from_config"].includes(r.status));
   const signals = results.flatMap((r) => (r.signals ?? []).map((s) => `${r.name} / ${s}`));
-  return { mode, files, problems, results, drift, signals, observatory: obs, lockfile };
+  const viaObservatory = results.filter((x) => x.via === "observatory").length;
+  return { mode, files, problems, results, drift, signals, observatory: obs, viaObservatory, lockfile };
 }
 var icon = { unchanged: "\u2705", drifted: "\u26A0\uFE0F", unlocked: "\u{1F195}", locked: "\u{1F512}", removed_from_config: "\u2796", auth_required: "\u{1F510}", unreachable: "\u2754", skipped: "\u23ED\uFE0F" };
 function report(r, { title = "MCP tool drift" } = {}) {
@@ -7717,13 +7835,19 @@ function report(r, { title = "MCP tool drift" } = {}) {
   L.push(head, "");
   if (r.signals.length) L.push(`\u{1F6A9} **Signals worth a close look** (heuristics, not verdicts): ${r.signals.map((s) => `\`${s}\``).join(", ")}`, "");
   L.push("| | Server | Transport | Tools | Status |", "|---|---|---|---|---|");
-  for (const x of r.results) L.push(`| ${icon[x.status] ?? ""} | \`${x.name}\` | ${x.transport} | ${x.tool_count ?? "\u2013"} | ${x.status.replace(/_/g, " ")}${x.error ? `: ${x.error}` : ""} |`);
+  for (const x of r.results) {
+    const via = x.via === "observatory" ? ` (via observatory, seen ${String(x.observedAt ?? "").slice(0, 10)}${x.stale ? ", stale" : ""}; local: ${x.localError})` : "";
+    L.push(`| ${icon[x.status] ?? ""} | \`${x.name}\` | ${x.transport} | ${x.tool_count ?? "\u2013"} | ${x.status.replace(/_/g, " ")}${via}${x.error ? `: ${x.error}` : ""}${x.coverage ? ` (${x.coverage})` : ""} |`);
+  }
   for (const x of r.results.filter((y) => y.status === "drifted")) {
     L.push("", `### \`${x.name}\``);
     for (const t of x.added) L.push(`- **added** \`${t.name}\`${t.signals.length ? ` \u{1F6A9} ${t.signals.join(", ")}` : ""}`);
     for (const t of x.removed) L.push(`- **removed** \`${t.name}\``);
     for (const t of x.changedTools) L.push(`- **changed** \`${t.name}\`: ${t.fields.join(", ")}${t.signals.length ? ` \u{1F6A9} ${t.signals.join(", ")}` : ""}`);
+    if (x.via === "observatory") L.push(`- the observatory's hash no longer matches your pin${x.observatoryChange ? `; its latest change (${x.observatoryChange.at.slice(0, 10)}): ${x.observatoryChange.summary}` : ""}. Tool-level detail: ${x.serverPage ?? "drift_diff"}`);
+    if (x.noDefinitions) L.push(`- pinned from the observatory (hash only), so there is no stored definition to diff. Run \`update\` after review to store the full definitions.`);
   }
+  if (r.viaObservatory) L.push("", `<sub>${r.viaObservatory} server(s) this run could not read were checked against the MCP Drift Observatory's last nightly observation (hashes are byte-identical to yours). Only each server's origin and path were sent, never query strings, headers or credentials. Turn off with \`observatory: false\` / \`--no-observatory\`.</sub>`);
   const o = r.observatory;
   if (o) {
     L.push("");
@@ -7770,6 +7894,7 @@ async function main() {
     stdio: bool("stdio", true),
     timeoutMs: Number(input("timeout-ms", "30000")),
     publicFeed: bool("public-feed", true),
+    observatory: bool("observatory", true),
     readerCard: input("reader-card") || void 0
   });
   const md = report(r);

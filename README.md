@@ -15,6 +15,9 @@ what your agent does, and nothing in your repo changes. `npm` has `package-lock.
 
 - Works with **every** server you can reach: remote (Streamable HTTP, legacy SSE) and local (stdio), including
   servers behind auth. Your secrets stay in your CI.
+- **And the public ones you can't.** When this run can't read a remote server (no secret in this job, blocked from the
+  runner, down right now), it falls back to the MCP Drift Observatory's last nightly observation and compares hashes.
+  You can even pin a server you have never connected to. See [Observatory fallback](#observatory-fallback).
 - Reads `.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor) and `.vscode/mcp.json` (VS Code), with `${VAR}` expansion.
 - Shows a field-level diff (`description`, `inputSchema`, `annotations`…) and flags known tool-poisoning tells:
   hidden instructions, `<IMPORTANT>` tags, "don't tell the user", sensitive paths, exfiltration wording, invisible
@@ -28,6 +31,7 @@ what your agent does, and nothing in your repo changes. `npm` has `package-lock.
 npx mcp-drift-guard lock     # probe your servers, write mcp-tools.lock.json, then commit it
 npx mcp-drift-guard check    # exit 1 if anything changed
 npx mcp-drift-guard update   # accept the change after you've reviewed it (then check the git diff)
+npx mcp-drift-guard observe https://mcp.example.com/mcp   # any public server, no config needed
 ```
 
 ## GitHub Action
@@ -50,7 +54,8 @@ Run it on pull requests **and on a daily schedule**: servers change without a co
 | `fail-on` | `any` | `any`, `signals` (only changes that carry a poisoning signal) or `never` |
 | `stdio` | `true` | `false` checks remote servers only |
 | `timeout-ms` | `30000` | per server |
-| `public-feed` | `true` | the public cross-check below |
+| `observatory` | `true` | fall back to the observatory for remote servers this run can't read |
+| `public-feed` | `true` | the public history cross-check below |
 | `reader-card` | | your A2A Agent Card URL, if you have one |
 
 Outputs: `drift`, `signals`, `report` (Markdown, also written to the job summary) and `json`.
@@ -72,7 +77,30 @@ untrusted pull requests if that matters for your repo.
 - **The MCP Drift Observatory's tools** (`drift_check`, `drift_diff`, `drift_probe`, `drift_status`, `drift_hash`) for public
   servers. The skill asks before sending a server URL to them.
 
-## The public cross-check, over RSS-A
+## Observatory fallback
+
+A remote server can't be read from a run when its secret isn't in that job, when a firewall blocks the runner, or when
+it's down. Before, that server just showed "not checked". Now, for public `https` servers, mcp-drift-guard asks the
+[MCP Drift Observatory](https://drift.getvda.ai) what it saw at its last nightly crawl (`drift_check`, plus `drift_diff`
+when there were changes) and compares that hash with your pin. The hashes are the same bytes, so the comparison is exact.
+
+| Locally | Observatory | Result |
+|---|---|---|
+| read OK | (not asked) | full diff, as before |
+| can't read | knows it, same hash as your pin | ✅ unchanged (via observatory, with the date it was seen) |
+| can't read | knows it, different hash | ⚠️ drifted, with the observatory's change summary and a link to its tool-level diff |
+| can't read | doesn't know it | not checked |
+
+- `lock` pins such a server from the observatory's hash alone. There is no stored definition to diff yet, so the first
+  `update` after you can read it stores the full definitions.
+- Observations older than 7 days are marked **stale**.
+- **What leaves the run:** each such server's origin and path, for example `https://mcp.example.com/mcp`. Never the
+  query string, headers, credentials or tool definitions. Hosts that look private (`localhost`, `10.x`, `192.168.x`,
+  `.internal`, `.corp`…), plain `http`, and URLs with an unexpanded `${VAR}` in the host or path are never sent.
+- It covers what the observatory can see: public servers that answer without auth. Turn it off with `observatory: false`,
+  `--no-observatory` or `DRIFT_GUARD_OFFLINE=1`.
+
+## The public history cross-check, over RSS-A
 
 The [MCP Drift Observatory](https://github.com/mikerawsonnz/mcp-drift-observatory) crawls public MCP servers every night,
 hashes what each declares and publishes every change as a **signed feed**. It uses [RSS-A](https://github.com/getvda-ai/rssa)

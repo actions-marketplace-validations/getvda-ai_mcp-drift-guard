@@ -50,7 +50,7 @@ export function loadServers({ cwd = process.cwd(), configs, env = process.env } 
       const target = transport === "stdio" ? [c.command, ...(c.args ?? [])].join(" ") : safeTarget(c.url ?? "");
       // Template target (before expansion) keeps secrets out of the lockfile.
       const rawTarget = transport === "stdio" ? [raw.command, ...(raw.args ?? [])].join(" ") : safeTarget(raw.url ?? "");
-      servers.push({ name, transport, config: c, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
+      servers.push({ name, transport, config: c, rawUrl: raw.url, target: rawTarget, resolvedTarget: target, missingEnv: [...new Set(missing)], file: relative(cwd, path) || f });
     }
   }
   return { files, servers, problems };

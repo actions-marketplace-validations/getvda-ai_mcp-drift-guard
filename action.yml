@@ -23,6 +23,9 @@ inputs:
   timeout-ms:
     description: Per-server timeout.
     default: "30000"
+  observatory:
+    description: For remote servers this run cannot read (auth, missing secret, unreachable), check the MCP Drift Observatory's record instead. Sends each such server's origin and path only, never query strings, headers or credentials.
+    default: "true"
   public-feed:
     description: Cross-check against the signed MCP Drift Observatory feed (read over RSS-A). Only the public feed is fetched; your server list is never sent.
     default: "true"
