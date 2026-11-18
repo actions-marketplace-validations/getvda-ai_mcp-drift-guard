@@ -6552,7 +6552,7 @@ function hashTools(tools) {
 
 // src/probe.js
 import { spawn } from "node:child_process";
-var VERSION = "0.2.0";
+var VERSION = "0.2.1";
 var CLIENT = { name: "mcp-drift-guard", version: VERSION };
 var PROTOCOL = "2025-06-18";
 var RpcError = class extends Error {
@@ -7985,7 +7985,11 @@ async function main() {
     for (const [u, x] of rows) {
       if (x.error) console.log(`\u2754 ${u}: ${x.error}`);
       else if (!x.known) console.log(`\u2013 ${u}: not in the observatory${x.note ? ` (${x.note})` : ""}`);
-      else console.log(`${x.change_count ? "\u26A0\uFE0F" : "\u2705"} ${u}: ${x.tool_count} tools, hash ${x.full_hash.slice(0, 12)}\u2026, ${x.change_count} change(s), last ${String(x.last_changed_at).slice(0, 10)}${x.latest_change ? ` (${x.latest_change.summary})` : ""}`);
+      else {
+        const day = (t) => t ? String(t).slice(0, 10) : "unknown";
+        const changes = x.change_count && x.last_changed_at ? `${x.change_count} change(s), last ${day(x.last_changed_at)}` : x.change_count ? `${x.change_count} change(s)` : "never changed";
+        console.log(`${x.change_count ? "\u26A0\uFE0F" : "\u2705"} ${u}: ${x.tool_count} tools, hash ${x.full_hash.slice(0, 12)}\u2026, ${changes}, last checked ${day(x.last_success_at)}${x.latest_change ? ` (${x.latest_change.summary})` : ""}`);
+      }
     }
     return 0;
   }

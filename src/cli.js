@@ -90,7 +90,11 @@ async function main() {
     for (const [u, x] of rows) {
       if (x.error) console.log(`❔ ${u}: ${x.error}`);
       else if (!x.known) console.log(`– ${u}: not in the observatory${x.note ? ` (${x.note})` : ""}`);
-      else console.log(`${x.change_count ? "⚠️" : "✅"} ${u}: ${x.tool_count} tools, hash ${x.full_hash.slice(0, 12)}…, ${x.change_count} change(s), last ${String(x.last_changed_at).slice(0, 10)}${x.latest_change ? ` (${x.latest_change.summary})` : ""}`);
+      else {
+        const day = (t) => (t ? String(t).slice(0, 10) : "unknown");
+        const changes = x.change_count && x.last_changed_at ? `${x.change_count} change(s), last ${day(x.last_changed_at)}` : x.change_count ? `${x.change_count} change(s)` : "never changed";
+        console.log(`${x.change_count ? "⚠️" : "✅"} ${u}: ${x.tool_count} tools, hash ${x.full_hash.slice(0, 12)}…, ${changes}, last checked ${day(x.last_success_at)}${x.latest_change ? ` (${x.latest_change.summary})` : ""}`);
+      }
     }
     return 0;
   }

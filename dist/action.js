@@ -6616,7 +6616,7 @@ function hashTools(tools) {
 
 // src/probe.js
 import { spawn } from "node:child_process";
-var VERSION = "0.2.0";
+var VERSION = "0.2.1";
 var CLIENT = { name: "mcp-drift-guard", version: VERSION };
 var PROTOCOL = "2025-06-18";
 var RpcError = class extends Error {

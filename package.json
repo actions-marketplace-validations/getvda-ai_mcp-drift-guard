@@ -1,6 +1,6 @@
 {
   "name": "mcp-drift-guard",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A lockfile for the tools your MCP servers declare. Fails CI when a server's tool names, descriptions or schemas change. Cross-checks the signed MCP Drift Observatory feed over RSS-A.",
   "type": "module",
   "bin": { "mcp-drift-guard": "dist/cli.js" },
