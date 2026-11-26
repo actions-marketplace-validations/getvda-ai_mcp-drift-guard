@@ -84,6 +84,9 @@ it's down. Before, that server just showed "not checked". Now, for public `https
 [MCP Drift Observatory](https://drift.getvda.ai) what it saw at its last nightly crawl (`drift_check`, plus `drift_diff`
 when there were changes) and compares that hash with your pin. The hashes are the same bytes, so the comparison is exact.
 
+The observatory is also a public MCP connector you can add to any client (`https://drift.getvda.ai/mcp`, no auth):
+[![MCP Drift Observatory MCP connector](https://glama.ai/mcp/connectors/ai.getvda/integration-agent/badges/score.svg)](https://glama.ai/mcp/connectors/ai.getvda/integration-agent)
+
 | Locally | Observatory | Result |
 |---|---|---|
 | read OK | (not asked) | full diff, as before |
